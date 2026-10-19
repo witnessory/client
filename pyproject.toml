@@ -1,0 +1,37 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "witnessory"
+dynamic = ["version"]
+description = "Witnessory from your code or agent: check a site's post-quantum readiness, read the observatory's record, see the probe map; an MCP server for agents."
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.10"
+authors = [{name = "Witnessory", email = "witnessory@gmail.com"}]
+keywords = ["post-quantum", "tls", "ml-kem", "pqc", "monitoring", "mcp"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Operating System :: OS Independent",
+  "Topic :: Security :: Cryptography",
+  "Topic :: Internet :: WWW/HTTP",
+]
+dependencies = []
+
+[project.optional-dependencies]
+verify = ["cryptography>=48"]
+
+[project.urls]
+Homepage = "https://witnessory.org/"
+Source = "https://github.com/witnessory/client"
+Prices = "https://witnessory.org/pricing.json"
+
+[project.scripts]
+witnessory = "witnessory.cli:main"
+
+[tool.setuptools]
+packages = ["witnessory"]
+
+[tool.setuptools.dynamic]
+version = {attr = "witnessory.VERSION"}
