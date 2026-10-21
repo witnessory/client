@@ -48,5 +48,12 @@ answer carries `offers`: what more there is and where the prices are (https://wi
 your own sites over time from several networks, with alerts and signed evidence, is a separate product on the same
 page.
 
+## Paying per request, as an agent
+
+No account is needed: `GET https://api.witnessory.org/pay/check?domain=example.org` answers 402 with what to pay
+(x402 v2; USDC on Base), and any x402-capable client pays and resends. A plan's key can be bought the same way
+(`POST https://api.witnessory.org/pay/key?plan=api-developer`) and then used here through `WITNESSORY_KEY`. Index of
+what is sold: https://api.witnessory.org/pay.
+
 Terms: https://witnessory.org/terms.html. Privacy: https://witnessory.org/privacy.html. Contact:
 security@witnessory.org.
