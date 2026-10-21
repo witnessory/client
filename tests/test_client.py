@@ -25,14 +25,22 @@ except ImportError:
     pass
 
 
+PAY_TO = "0x3984Dd1799AD2697A5F097c96Ed6372552A30Fc6"
+ACCEPT = {"scheme": "exact", "network": "eip155:84532", "amount": "10000", "asset": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
+          "payTo": PAY_TO, "maxTimeoutSeconds": 300, "extra": {"name": "USDC", "version": "2"}}
+
+
 class Stub(http.server.BaseHTTPRequestHandler):
     seen = []
+    paid = []
 
     def log_message(self, *a):
         pass
 
     def do_GET(self):
         Stub.seen.append((self.path, self.headers.get("User-Agent"), self.headers.get("Authorization")))
+        if self.path.startswith("/pay/check?domain="):
+            return self.paid_route()
         if self.path.startswith("/api/check?domain=limited"):
             return self.send(429, {"error": "too many", "code": "rate_limited", "retry_after_s": 7, "offers": OFFERS}, {"Retry-After": "7"})
         if self.path.startswith("/api/check?domain="):
@@ -54,6 +62,29 @@ class Stub(http.server.BaseHTTPRequestHandler):
             return self.send(200, body)
         self.send(404, {"error": "not found", "code": "not_found"})
 
+    def paid_route(self):
+        """A stand-in for the paid route: 402 with requirements; with a signature, verify it recovers to `from`."""
+        sig = self.headers.get("PAYMENT-SIGNATURE")
+        req = {"x402Version": 2, "resource": {"url": "http://x/pay/check?domain=site.example"}, "accepts": [ACCEPT]}
+        if not sig:
+            return self.send(402, {"error": "payment required"}, {"PAYMENT-REQUIRED": base64.b64encode(json.dumps(req).encode()).decode()})
+        payload = json.loads(base64.b64decode(sig))
+        auth = payload["payload"]["authorization"]
+        from eth_account import Account
+        from eth_account.messages import encode_typed_data
+        import witnessory.pay as wp
+        domain = {"name": "USDC", "version": "2", "chainId": 84532, "verifyingContract": ACCEPT["asset"]}
+        msg = {"from": auth["from"], "to": auth["to"], "value": int(auth["value"]), "validAfter": int(auth["validAfter"]),
+               "validBefore": int(auth["validBefore"]), "nonce": bytes.fromhex(auth["nonce"][2:])}
+        who = Account.recover_message(encode_typed_data(domain, wp.TYPES, msg), signature=bytes.fromhex(payload["payload"]["signature"][2:]))
+        ok = who == auth["from"] and auth["to"] == PAY_TO and auth["value"] == "10000" and payload["accepted"]["network"] == "eip155:84532"
+        Stub.paid.append((who, ok, payload))
+        if not ok:
+            return self.send(402, {"error": "payment not accepted: invalid_exact_evm_signature"})
+        settlement = base64.b64encode(json.dumps({"success": True, "transaction": "0xtx", "network": "eip155:84532", "payer": who}).encode()).decode()
+        return self.send(200, {"record": RECORD, "signatures": SIGS, "summary": "site.example: ready", "payment": {"amount_usd": "0.01", "transaction": "0xtx"}},
+                         {"PAYMENT-RESPONSE": settlement})
+
     def send(self, code, obj, headers=None):
         data = json.dumps(obj).encode()
         self.send_response(code)
@@ -71,13 +102,16 @@ class Client(unittest.TestCase):
         cls.srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Stub)
         threading.Thread(target=cls.srv.serve_forever, daemon=True).start()
         cls.base = f"http://127.0.0.1:{cls.srv.server_address[1]}"
-        for var in ("WITNESSORY_CHECK_URL", "WITNESSORY_SITE_URL", "WITNESSORY_COORDINATOR_URL"):
+        for var in ("WITNESSORY_CHECK_URL", "WITNESSORY_SITE_URL", "WITNESSORY_COORDINATOR_URL", "WITNESSORY_PAY_URL"):
             os.environ[var] = cls.base
         os.environ.pop("WITNESSORY_KEY", None)
         import importlib
         import witnessory.api
         importlib.reload(witnessory.api)
         cls.api = witnessory.api
+        import witnessory.pay
+        importlib.reload(witnessory.pay)
+        cls.pay = witnessory.pay
 
     @classmethod
     def tearDownClass(cls):
@@ -108,6 +142,25 @@ class Client(unittest.TestCase):
         r["record"]["level"] = "not_yet"
         self.assertEqual(self.api.verify(r), {"ed25519": False})
 
+    def test_paying_signs_what_the_402_asks_and_verifies(self):
+        try:
+            from eth_account import Account
+        except ImportError:
+            self.skipTest("eth-account not installed")
+        key = "0x" + "11" * 32
+        self.assertEqual(self.pay.address(key), Account.from_key(key).address)
+        body, settlement = self.pay.check("site.example", private_key=key)
+        self.assertEqual((body["summary"], settlement["success"], settlement["transaction"]), ("site.example: ready", True, "0xtx"))
+        who, ok, payload = Stub.paid[-1]
+        self.assertTrue(ok)
+        self.assertEqual((payload["x402Version"], payload["accepted"]["amount"], who), (2, "10000", Account.from_key(key).address))
+        self.assertEqual(len(bytes.fromhex(payload["payload"]["authorization"]["nonce"][2:])), 32)
+        with self.assertRaises(self.api.WitnessoryError):
+            self.pay.check("site.example", private_key=key, network="eip155:1")        # not offered
+        os.environ.pop("WITNESSORY_PAY_KEY", None)
+        with self.assertRaises(self.api.WitnessoryError):
+            self.pay.check("site.example")                                             # no wallet configured
+
     def run_cli(self, *args, env=None):
         return subprocess.run([sys.executable, "-m", "witnessory.cli", *args], capture_output=True, text=True, timeout=60,
                               env={**os.environ, **(env or {})})
@@ -137,6 +190,7 @@ class Client(unittest.TestCase):
         self.assertEqual(by_id[1]["result"]["protocolVersion"], "2025-06-18")
         self.assertEqual(by_id[1]["result"]["serverInfo"]["name"], "witnessory")
         self.assertEqual([t["name"] for t in by_id[2]["result"]["tools"]][:2], ["check_site", "pq_headline"])
+        self.assertIn("pay_check", [t["name"] for t in by_id[2]["result"]["tools"]])
         called = json.loads(by_id[3]["result"]["content"][0]["text"])
         self.assertEqual((called["level"], called["summary"], by_id[3]["result"]["isError"]), ("ready", "site.example: ready", False))
         limited = json.loads(by_id[4]["result"]["content"][0]["text"])

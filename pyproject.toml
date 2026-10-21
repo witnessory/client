@@ -21,6 +21,7 @@ dependencies = []
 
 [project.optional-dependencies]
 verify = ["cryptography>=48"]
+pay = ["eth-account>=0.13"]
 
 [project.urls]
 Homepage = "https://witnessory.org/"

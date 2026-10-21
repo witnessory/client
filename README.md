@@ -5,7 +5,7 @@ the client: the services as Python functions, a command line, and an MCP server 
 Standard library only; Apache 2.0.
 
 ```
-pip install https://github.com/witnessory/client/releases/download/v0.1.0/witnessory-0.1.0-py3-none-any.whl
+pip install https://github.com/witnessory/client/releases/download/v0.2.0/witnessory-0.2.0-py3-none-any.whl
 ```
 
 ## From the command line
@@ -51,9 +51,18 @@ page.
 ## Paying per request, as an agent
 
 No account is needed: `GET https://api.witnessory.org/pay/check?domain=example.org` answers 402 with what to pay
-(x402 v2; USDC on Base), and any x402-capable client pays and resends. A plan's key can be bought the same way
-(`POST https://api.witnessory.org/pay/key?plan=api-developer`) and then used here through `WITNESSORY_KEY`. Index of
-what is sold: https://api.witnessory.org/pay.
+(x402 v2; USDC on Base), and any x402-capable client pays and resends. This client can pay too:
+
+```
+pip install "witnessory[pay]"
+export WITNESSORY_PAY_KEY=0x...          # a wallet holding a little USDC on Base
+witnessory pay address                   # where to send the USDC
+witnessory pay check example.org         # $0.01, one fresh signed check
+witnessory pay key api-developer         # $19, a key for 2,000 fresh checks in 31 days -> WITNESSORY_KEY
+```
+
+From code: `witnessory.pay.check("example.org")` and `witnessory.pay.buy_key("api-developer")`. As an MCP tool:
+`pay_check`. Index of what is sold: https://api.witnessory.org/pay.
 
 Terms: https://witnessory.org/terms.html. Privacy: https://witnessory.org/privacy.html. Contact:
 security@witnessory.org.

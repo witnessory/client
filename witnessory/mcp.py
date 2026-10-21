@@ -37,6 +37,11 @@ TOOLS = [
      "inputSchema": {"type": "object", "properties": {}}},
     {"name": "service_status", "description": "Whether each Witnessory service is up, from the hourly watch.",
      "inputSchema": {"type": "object", "properties": {}}},
+    {"name": "pay_check", "description": "Pay $0.01 from the configured wallet (WITNESSORY_PAY_KEY; USDC on Base) for one "
+                                         "fresh, signed check of a public website, without an account. Use when the free check "
+                                         "is rate-limited or a fresh (not reused) result is needed.",
+     "inputSchema": {"type": "object", "properties": {"domain": {"type": "string", "description": "e.g. example.org"}},
+                     "required": ["domain"]}},
     {"name": "pricing", "description": "What Witnessory sells and at what price: watching sites over time from several "
                                        "networks with alerts and signed evidence, API keys with higher limits, evidence "
                                        "reports, data licences. Includes how to buy.",
@@ -65,6 +70,11 @@ def call_tool(name, args):
         return api.service_status()
     if name == "pricing":
         return api.pricing()
+    if name == "pay_check":
+        from . import pay
+        body, settlement = pay.check(str(args.get("domain", "")))
+        return {"summary": body.get("summary"), "level": body["record"].get("level"), "record": body["record"],
+                "signatures": body.get("signatures"), "paid": body.get("payment"), "settlement": settlement}
     raise KeyError(name)
 
 

@@ -6,6 +6,9 @@
   witnessory status                         the services' status, and the checker's own state
   witnessory pricing                        what is paid, and the prices
   witnessory mcp                            run as an MCP server on stdin/stdout, for agents
+  witnessory pay address                    the paying wallet's address (WITNESSORY_PAY_KEY; pip install "witnessory[pay]")
+  witnessory pay check example.org          $0.01: one fresh, signed check, paid from that wallet
+  witnessory pay key api-developer          $19: a key for 2,000 fresh checks in 31 days
 """
 
 import argparse
@@ -31,6 +34,10 @@ def main(argv=None):
     v.add_argument("file")
     for name in ("headline", "probes", "status", "pricing", "mcp"):
         sub.add_parser(name)
+    pp = sub.add_parser("pay", help="pay per request from your own wallet (x402)")
+    pp.add_argument("what", choices=["address", "check", "key"])
+    pp.add_argument("target", nargs="?", help="the domain to check, or the plan (api-developer, api-pro)")
+    pp.add_argument("--network", help="eip155:8453 (Base, default) or eip155:84532 (test network)")
     a = p.parse_args(argv)
     try:
         if a.cmd == "check":
@@ -58,6 +65,20 @@ def main(argv=None):
         elif a.cmd == "mcp":
             from . import mcp
             mcp.serve()
+        elif a.cmd == "pay":
+            from . import pay
+            if a.what == "address":
+                print(pay.address())
+            elif a.what == "check":
+                if not a.target:
+                    p.error("pay check needs a domain")
+                body, settlement = pay.check(a.target, network=a.network)
+                print(body.get("summary") or body["record"].get("level"))
+                if settlement:
+                    print(f"(paid {body.get('payment', {}).get('amount_usd')} USD on {settlement.get('network')}, transaction {settlement.get('transaction')})")
+            else:
+                body, settlement = pay.buy_key(a.target or "api-developer", network=a.network)
+                out(body)
     except api.WitnessoryError as e:
         print(f"witnessory: {e}" + (f" (code {e.code})" if e.code else "") + (f"; try again in {e.retry_after} s" if e.retry_after else ""),
               file=sys.stderr)
