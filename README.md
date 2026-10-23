@@ -5,7 +5,7 @@ the client: the services as Python functions, a command line, and an MCP server 
 Standard library only; Apache 2.0.
 
 ```
-pip install https://github.com/witnessory/client/releases/download/v0.2.1/witnessory-0.2.1-py3-none-any.whl
+pip install https://github.com/witnessory/client/releases/download/v0.2.2/witnessory-0.2.2-py3-none-any.whl
 ```
 
 ## From the command line

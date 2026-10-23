@@ -63,11 +63,22 @@ def _decode(header):
     return json.loads(base64.b64decode(header))
 
 
+def _json(raw):
+    """A body as JSON, or {"error": <text>} when a proxy answered with something else (never a bare parse error)."""
+    try:
+        return json.loads(raw or b"{}")
+    except ValueError:
+        return {"error": (raw or b"")[:200].decode("utf-8", "replace").strip() or "no answer"}
+
+
 def sign(accept, resource, private_key=None, now=None, extensions=None):
     """The PaymentPayload for one `accepts` entry of a 402: a signed EIP-3009 transfer authorisation."""
     Account, acct = _account(private_key)
     now = int(now or time.time())
-    chain_id = int(str(accept["network"]).split(":")[1])
+    try:
+        chain_id = int(str(accept["network"]).split(":")[1])
+    except (IndexError, ValueError):
+        raise api.WitnessoryError(f"only EVM networks (eip155:<chain>) can be paid here, not {accept.get('network')}") from None
     domain = {"name": accept["extra"]["name"], "version": accept["extra"]["version"], "chainId": chain_id, "verifyingContract": accept["asset"]}
     nonce = secrets.token_bytes(32)
     message = {"from": acct.address, "to": accept["payTo"], "value": int(accept["amount"]), "validAfter": now - 600,
@@ -87,8 +98,8 @@ def pay(url, method="GET", private_key=None, network=None):
     status, headers, raw = _request(url, method, {})
     if status != 402:
         if status >= 400:
-            raise api.WitnessoryError(json.loads(raw or b"{}").get("error") or f"HTTP {status}", status)
-        return json.loads(raw), None
+            raise api.WitnessoryError(_json(raw).get("error") or f"HTTP {status}", status)
+        return _json(raw), None
     if "payment-required" not in headers:
         raise api.WitnessoryError("402 without payment requirements", 402)
     req = _decode(headers["payment-required"])
@@ -100,7 +111,7 @@ def pay(url, method="GET", private_key=None, network=None):
     token = base64.b64encode(json.dumps(payload, separators=(",", ":")).encode()).decode()
     status, headers, raw = _request(url, method, {"PAYMENT-SIGNATURE": token})
     settlement = _decode(headers["payment-response"]) if headers.get("payment-response") else None
-    body = json.loads(raw or b"{}")
+    body = _json(raw)
     if status != 200:
         raise api.WitnessoryError(body.get("error") or f"HTTP {status}", status, body.get("code"), offers=body.get("offers"))
     return body, settlement
