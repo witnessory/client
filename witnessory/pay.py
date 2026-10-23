@@ -63,7 +63,7 @@ def _decode(header):
     return json.loads(base64.b64decode(header))
 
 
-def sign(accept, resource, private_key=None, now=None):
+def sign(accept, resource, private_key=None, now=None, extensions=None):
     """The PaymentPayload for one `accepts` entry of a 402: a signed EIP-3009 transfer authorisation."""
     Account, acct = _account(private_key)
     now = int(now or time.time())
@@ -77,7 +77,8 @@ def sign(accept, resource, private_key=None, now=None):
     authorization["nonce"] = "0x" + nonce.hex()
     sig = signed.signature.hex()
     return {"x402Version": 2, "resource": resource, "accepted": accept,
-            "payload": {"signature": sig if sig.startswith("0x") else "0x" + sig, "authorization": authorization}, "extensions": {}}
+            "payload": {"signature": sig if sig.startswith("0x") else "0x" + sig, "authorization": authorization},
+            "extensions": extensions or {}}                         # echoed, so facilitators can catalogue the resource
 
 
 def pay(url, method="GET", private_key=None, network=None):
@@ -95,7 +96,7 @@ def pay(url, method="GET", private_key=None, network=None):
     accepts = [a for a in req.get("accepts", []) if a.get("scheme") == "exact" and (not want or a.get("network") == want)]
     if not accepts:
         raise api.WitnessoryError(f"no acceptable way to pay (offered: {[a.get('network') for a in req.get('accepts', [])]})", 402)
-    payload = sign(accepts[0], req.get("resource"), private_key)
+    payload = sign(accepts[0], req.get("resource"), private_key, extensions=req.get("extensions"))
     token = base64.b64encode(json.dumps(payload, separators=(",", ":")).encode()).decode()
     status, headers, raw = _request(url, method, {"PAYMENT-SIGNATURE": token})
     settlement = _decode(headers["payment-response"]) if headers.get("payment-response") else None

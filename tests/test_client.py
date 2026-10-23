@@ -65,7 +65,8 @@ class Stub(http.server.BaseHTTPRequestHandler):
     def paid_route(self):
         """A stand-in for the paid route: 402 with requirements; with a signature, verify it recovers to `from`."""
         sig = self.headers.get("PAYMENT-SIGNATURE")
-        req = {"x402Version": 2, "resource": {"url": "http://x/pay/check?domain=site.example"}, "accepts": [ACCEPT]}
+        req = {"x402Version": 2, "resource": {"url": "http://x/pay/check?domain=site.example"}, "accepts": [ACCEPT],
+               "extensions": {"bazaar": {"info": {"input": {"type": "http", "method": "GET"}}}}}
         if not sig:
             return self.send(402, {"error": "payment required"}, {"PAYMENT-REQUIRED": base64.b64encode(json.dumps(req).encode()).decode()})
         payload = json.loads(base64.b64decode(sig))
@@ -155,6 +156,7 @@ class Client(unittest.TestCase):
         self.assertTrue(ok)
         self.assertEqual((payload["x402Version"], payload["accepted"]["amount"], who), (2, "10000", Account.from_key(key).address))
         self.assertEqual(len(bytes.fromhex(payload["payload"]["authorization"]["nonce"][2:])), 32)
+        self.assertIn("bazaar", payload["extensions"])                              # echoed for the catalogue
         with self.assertRaises(self.api.WitnessoryError):
             self.pay.check("site.example", private_key=key, network="eip155:1")        # not offered
         os.environ.pop("WITNESSORY_PAY_KEY", None)
